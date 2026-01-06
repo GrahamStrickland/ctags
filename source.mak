@@ -380,6 +380,7 @@ PARSER_SRCS =				\
 	parsers/go.c			\
 	parsers/haskell.c		\
 	parsers/haxe.c			\
+	parsers/harbour.c		\
 	parsers/html.c			\
 	parsers/iniconf.c		\
 	parsers/itcl.c			\

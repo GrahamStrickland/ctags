@@ -112,6 +112,7 @@
 	GPerfParser, \
 	HaskellParser, \
 	HaxeParser, \
+	HbrParser, \
 	HtmlParser, \
 	IniconfParser, \
 	InkoParser, \
