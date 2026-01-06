@@ -1130,11 +1130,11 @@ static int directiveDefine (const int c, bool undef)
 			int p = cppGetcFromUngetBufferOrFile ();
 			short nth = 0;
 
-			if (p == '(')
-			{
-				intArray *params = intArrayNew ();
-				vString *param = vStringNew ();
-				int param_start = (int)countEntryInCorkQueue();
+		if (p == '(' && Cpp.useClientLangMacroParamKindIndex)
+		{
+			intArray *params = intArrayNew ();
+			vString *param = vStringNew ();
+			int param_start = (int)countEntryInCorkQueue();
 				do {
 					p = cppGetcFromUngetBufferOrFile ();
 					if (isalnum(p) || p == '_' || p == '$'
@@ -1146,38 +1146,45 @@ static int directiveDefine (const int c, bool undef)
 					}
 
 					if (vStringLength (param) > 0)
+				{
+					bool gnuext_placeholder = false;
+					if (vStringLength (param) > 3
+						&& strcmp(vStringValue (param) + vStringLength (param) - 3,
+								  "...")  == 0)
 					{
-						bool gnuext_placeholder = false;
-						if (vStringLength (param) > 3
-							&& strcmp(vStringValue (param) + vStringLength (param) - 3,
-									  "...")  == 0)
-						{
-							/* args... in GNU cpp extension
-							 *
-							 * #define debug(format, args...) fprintf (stderr, format, args)
-							 *
-							 * In this case, args should be tagged. However the signature field
-							 * for debug must be "(format,args...)".
-							 */
-							vString *nodots = vStringNewNInit (vStringValue (param),
-															   vStringLength (param) - 3);
+						/* args... in GNU cpp extension
+						 *
+						 * #define debug(format, args...) fprintf (stderr, format, args)
+						 *
+						 * In this case, args should be tagged. However the signature field
+						 * for debug must be "(format,args...)".
+						 */
+						vString *nodots = vStringNewNInit (vStringValue (param),
+														   vStringLength (param) - 3);
+						if (Cpp.macroParamKindIndex != KIND_GHOST_INDEX)
 							makeParamTag (nodots, nth, false);
-							vStringDelete (nodots);
-							gnuext_placeholder = true;
-						}
-
-						int r = makeParamTag (param, nth++,
-											  vStringChar(param, 0) == '.'
-											  || gnuext_placeholder);
-						intArrayAdd (params, r);
-						vStringClear (param);
+						vStringDelete (nodots);
+						gnuext_placeholder = true;
 					}
+
+					int r = CORK_NIL;
+					if (Cpp.macroParamKindIndex != KIND_GHOST_INDEX)
+					{
+						r = makeParamTag (param, nth++,
+										  vStringChar(param, 0) == '.'
+										  || gnuext_placeholder);
+						intArrayAdd (params, r);
+					}
+					else
+						nth++;
+					vStringClear (param);
+				}
 					if (p == '\\')
 						cppGetcFromUngetBufferOrFile (); /* Throw away the next char */
-				} while (p != ')' && p != EOF);
-				vStringDelete (param);
+			} while (p != ')' && p != EOF);
+			vStringDelete (param);
 
-				int param_end = (int)countEntryInCorkQueue();
+			int param_end = (Cpp.macroParamKindIndex != KIND_GHOST_INDEX) ? (int)countEntryInCorkQueue() : 0;
 				if (p == ')')
 				{
 					vString *signature = vStringNew ();
@@ -1189,19 +1196,36 @@ static int directiveDefine (const int c, bool undef)
 					r = makeDefineTag (vStringValue (Cpp.directive.name), NULL, undef);
 				intArrayDelete (params);
 
-				tagEntryInfo *e = getEntryInCorkQueue (r);
-				if (e)
-				{
-					updateTagLine (e, lineNumber, filePosition);
-					patchScopeFieldOfParameters (param_start, param_end, r);
-				}
-			}
-			else
+			tagEntryInfo *e = getEntryInCorkQueue (r);
+			if (e)
 			{
-				cppUngetc (p);
-				r = makeDefineTag (vStringValue (Cpp.directive.name), NULL, undef);
-			}
+				updateTagLine (e, lineNumber, filePosition);
+				if (Cpp.macroParamKindIndex != KIND_GHOST_INDEX)
+					patchScopeFieldOfParameters (param_start, param_end, r);
 		}
+	}
+	else if (p == '(')
+	{
+		/* Skip macro parameters without tagging them */
+		int depth = 1;
+		do {
+			p = cppGetcFromUngetBufferOrFile();
+			if (p == '(')
+				depth++;
+			else if (p == ')')
+				depth--;
+			else if (p == '\\')
+				cppGetcFromUngetBufferOrFile(); /* Skip escaped char */
+		} while (depth > 0 && p != EOF);
+		
+		r = makeDefineTag (vStringValue (Cpp.directive.name), NULL, undef);
+	}
+	else
+	{
+		cppUngetc (p);
+		r = makeDefineTag (vStringValue (Cpp.directive.name), NULL, undef);
+	}
+}
 	}
 	Cpp.directive.state = DRCTV_NONE;
 
